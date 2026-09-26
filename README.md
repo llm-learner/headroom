@@ -92,7 +92,7 @@ python -m pip install -r skills/headroom/requirements-desktop.txt
 pythonw skills/headroom/scripts/headroom_desktop.py --lang en
 ```
 
-A small H icon appears in the Windows taskbar notification area, possibly under the hidden-icons arrow. Click it to open the usage card, or hover for percent left. This first step is read-only; it does not enable automatic debits. Use `python` instead of `pythonw` if you need to see startup errors in a terminal.
+A small ring gauge appears in the Windows taskbar notification area, possibly under the hidden-icons arrow. Click it to open the usage card, or hover for percent left. This first step is read-only; it does not enable automatic debits. Use `python` instead of `pythonw` if you need to see startup errors in a terminal.
 
 ### Enable automatic debits
 
@@ -126,7 +126,7 @@ sh skills/headroom/hooks/install.sh             # add --link-skill to expose $he
 
 Then review and trust the two definitions in Codex `/hooks` as above. `SessionStart` starts the web dashboard (open [the dashboard](http://127.0.0.1:8766/?lang=en)). `sh skills/headroom/hooks/install.sh --uninstall` removes only headroom's hooks and keeps your ledger.
 
-**macOS menu bar (optional).** Install `requirements-desktop.txt` into that Python, then run `python3 skills/headroom/scripts/headroom_desktop.py --lang en`. An H icon appears in the menu bar; click it and choose **Show usage** for the static card, or use `--mode orb` for the floating orb. The animated WebView2 card is Windows-only, so clips play in the web dashboard. Python must include Tk (Homebrew: `brew install python-tk`); if Tk or the tray packages are missing, headroom falls back to the web dashboard. To have `SessionStart` open the menu bar display, re-run the installer with `--display desktop`. Nothing is added to login items.
+**macOS menu bar (optional).** Install `requirements-desktop.txt` into that Python, then run `python3 skills/headroom/scripts/headroom_desktop.py --lang en`. A ring gauge appears in the menu bar; click it and choose **Show usage** for the static card, or use `--mode orb` for the floating orb. The animated WebView2 card is Windows-only, so clips play in the web dashboard. Python must include Tk (Homebrew: `brew install python-tk`); if Tk or the tray packages are missing, headroom falls back to the web dashboard. To have `SessionStart` open the menu bar display, re-run the installer with `--display desktop`. Nothing is added to login items.
 
 The installer wires up **Codex only**. Other agents' local histories contribute to the cap and per-agent breakdown; by default, unscored turns also contribute estimated usage based on message count. Their hooks can be added by hand — the hook normalizes each agent's payload (`prompt`/`user_prompt`, `session_id`/`sessionId`, `turn_id`/`promptId`) and reads `HEADROOM_AGENT` when it is set, so a hook definition that exports that variable works without further changes.
 
@@ -134,7 +134,7 @@ The installer wires up **Codex only**. Other agents' local histories contribute 
 
 ## Taskbar tray (Windows)
 
-- **Click** the H tray icon to expand/collapse. The `−` button or Escape also collapses the card. Hover over the icon to see percent left.
+- **Click** the tray icon to expand/collapse. The `−` button or Escape also collapses the card. Hover over the icon to see percent left.
 - Add `--show` when launching to open the card immediately (exit any existing display first).
 - The card opens near the tray, inside the monitor's work area. Windows may initially place the icon under **Show hidden icons**; drag it onto the visible tray if desired.
 - **Right-click → Exit headroom** closes the display, not scoring. A later `SessionStart` can open it again.
@@ -148,6 +148,12 @@ The animated tray card needs Python with **Tk**, **pystray**, **Pillow**, **pywe
 If WebView2 is unavailable, exit the display and use `--renderer tk` for the original static tray card without a media player or listening port.
 
 Prefer the old draggable orb? Exit the tray display and launch with `--mode orb`. `--mode tray` is the default; `HEADROOM_DESKTOP_MODE=tray|orb` sets the startup default. Orb mode works without pystray; Pillow is optional there, with text faces for unsupported meme formats.
+
+## Tray icon
+
+The tray and the menu bar both use the bundled ring gauge, `assets/menubar-icon.png`. macOS can be in either appearance, so `assets/menubar-icon-dark.png` is used when it is dark — the navy arc would otherwise disappear. Both are authored at 72px, which is what an 18pt slot needs on a Retina display.
+
+Set `HEADROOM_ICON` to any PNG to use your own, or drop one at `~/.headroom/icon.png` to keep it out of the environment. A `-dark` sibling beside it is picked up automatically on a dark menu bar; without one, the light icon's dark half is lightened at runtime. When no file is found at all, headroom draws its own gauge ring around a bold H.
 
 To choose what future sessions launch, set `HEADROOM_DISPLAY` in the hook's environment to `desktop` (Windows default), `web`, `both`, or `off`. This changes display startup only, not scoring. The browser UI remains available manually:
 

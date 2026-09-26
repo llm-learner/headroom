@@ -288,5 +288,60 @@ class DesktopTests(unittest.TestCase):
         self.assertFalse(self.state.exists())
 
 
+class CardInteractionTests(unittest.TestCase):
+    """The card's own clicks: refresh feedback and the mood hop."""
+
+    @unittest.skipUnless(sys.platform in ("win32", "darwin"), "Tk card needs a display")
+    def test_refresh_shows_progress_and_always_clears_busy(self):
+        root = desktop.tk.Tk()
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root_path = Path(temp.name)
+        app = desktop.DesktopOrb(root, root_path, root_path / "l.sqlite3",
+                                 root_path / "d.json", "zh", visible=False, mode="tray",
+                                 adapters=None)
+        self.addCleanup(lambda: None if app.closed else app.close())
+        # A reader that raises something outside the caught set must still
+        # release the button, or every later refresh would be a no-op.
+        with patch.object(desktop, "read_usage", side_effect=KeyError("boom")):
+            app.request_refresh()
+            self.assertTrue(app.busy)
+            self.assertEqual(app.refresh_button.cget("text"), desktop.TEXT["zh"]["loading"])
+            deadline = time.monotonic() + 5
+            while app.busy and time.monotonic() < deadline:
+                app.poll()  # start() is not called, so drive the drain directly
+                root.update()
+                time.sleep(0.01)
+        self.assertFalse(app.busy)
+        self.assertEqual(app.refresh_button.cget("text"), desktop.TEXT["zh"]["refresh"])
+        self.assertFalse((root_path / "l.sqlite3").exists())
+
+    @unittest.skipUnless(sys.platform in ("win32", "darwin"), "Tk card needs a display")
+    def test_mood_click_hops_rotates_clips_and_settles(self):
+        root = desktop.tk.Tk()
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root_path = Path(temp.name)
+        app = desktop.DesktopOrb(root, root_path, root_path / "l.sqlite3",
+                                 root_path / "d.json", "zh", visible=False, mode="tray",
+                                 adapters=None)
+        self.addCleanup(lambda: None if app.closed else app.close())
+        app.data = {"left_percent": 26.67, "spent_points": 154.0, "cap_points": 210}
+        app.paint()
+        item = app.card.find_withtag("mood")[-1]
+        resting = app.card.bbox(item)[1]
+        played = []
+        with patch.object(desktop, "play_clip", side_effect=played.append):
+            app.play_mood()
+            self.assertEqual(app.card.bbox(item)[1], resting - desktop.MOOD_HOP)
+            app.settle_mood(app.mood_hop_token)
+            self.assertEqual(app.card.bbox(item)[1], resting)
+            app.play_mood()
+            app.play_mood()
+        self.assertEqual(len(played), 3)
+        self.assertNotEqual(played[0], played[1])   # clips rotate
+        self.assertEqual(played[0], played[2])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
