@@ -49,10 +49,12 @@ AI 有使用额度，你的大脑也该有。
 | agent | 历史来源 | 钩子 |
 | --- | --- | --- |
 | `codex` | `$CODEX_HOME/thread_history_1.sqlite` → `thread_items` | ✅ |
-| `claude` | `$CLAUDE_CONFIG_DIR/projects/*/*.jsonl`（回退到 `history.jsonl`） | — |
+| `claude` | `$CLAUDE_CONFIG_DIR/projects/*/*.jsonl`（回退到 `history.jsonl`） | ✅ |
 | `opencode` | `$XDG_DATA_HOME/opencode/opencode.db` → `message` | — |
-| `antigravity` | `$GEMINI_DIR/antigravity/brain/*/.system_generated/logs/transcript_full.jsonl` | — |
+| `antigravity` | `$GEMINI_DIR/antigravity/brain/*/.system_generated/logs/transcript_full.jsonl` | ✅ |
 | `workbuddy` | `$WORKBUDDY_HOME/projects/*/*.jsonl` | — |
+
+`antigravity` 覆盖共用 `~/.gemini` 的两个 Google 工具，但只有 Gemini CLI 会装钩子：它有「提交提示词」这个事件，而 Antigravity 自己的钩子系统没有（它的 `PreInvocation` 在**每一次**模型调用前触发，一条提示词会被扣好几次）。
 
 ```text
 python3 skills/headroom/scripts/headroom.py agents
@@ -96,15 +98,27 @@ pythonw skills/headroom/scripts/headroom_desktop.py --lang zh
 
 ### 开启自动扣点
 
-在仓库根目录审查并执行：
+在仓库根目录先预览，再写入：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File skills/headroom/hooks/install_windows.ps1
+```bash
+python3 skills/headroom/hooks/install_hooks.py --dry-run      # 打印每一处改动
+python3 skills/headroom/hooks/install_hooks.py                # 合并进本机检测到的每个 agent
+python3 skills/headroom/hooks/install_hooks.py --agents codex,claude
 ```
 
-在 Codex `/hooks` 中审查并信任 headroom 的 **SessionStart** 和 **UserPromptSubmit**。首次安装钩子后，新开一个会话验证激活。之后在同一个会话继续发消息就能扣点，**不需要反复新建会话**。
+| Agent | 配置文件 | 事件 |
+| --- | --- | --- |
+| Codex | `$CODEX_HOME/hooks.json` | `SessionStart`、`UserPromptSubmit` |
+| Claude Code | `$CLAUDE_CONFIG_DIR/settings.json` | `SessionStart`、`UserPromptSubmit` |
+| Gemini CLI | `$GEMINI_DIR/settings.json` | `SessionStart`、`BeforeAgent` |
 
-`SessionStart` 在 Windows 上启动托盘显示（其他平台启动网页面板）；`UserPromptSubmit` 在提交消息后异步评分，**不是等助手回复结束才评分**。数值会在评分完成、界面刷新后出现。安装器不会覆盖已存在的 `hooks.json`；有其他钩子时请合并两条定义，不要直接强制覆盖。
+默认的 `--agents auto` 会装上 Codex，以及本机已存在主目录的其他 agent，因此不会为你没在用的工具凭空创建 `~/.claude` 或 `~/.gemini`。`--agents all` 装全部，逗号列表则只装指定的几个。每个文件写入前都会备份，无关的钩子条目会被保留，无法解析的配置不会被改写，重复运行是幂等的。
+
+三个产品把同样两件事各自存在自己的 schema 里，安装器就按各自的 schema 写：Codex 和 Claude Code 的超时单位是秒，且 Claude Code 没有 `async` 字段；Gemini CLI 的超时单位是毫秒，并把提示词事件叫作 `BeforeAgent`。三者调用的是同一个 `headroom_hook.py`，所以无论你在哪个工具里打字，都由同一个本地评分器打分，每一笔扣点都进同一本共享账本。
+
+在各自 agent 里审查并信任 headroom 的钩子（Codex `/hooks`、Claude Code `/hooks`、Gemini CLI `/hooks panel`）。首次安装钩子后，新开一个会话验证激活。之后在同一个会话继续发消息就能扣点，**不需要反复新建会话**。
+
+`SessionStart` 在 Windows 和 macOS 上启动托盘显示（Linux 上启动网页面板）；`UserPromptSubmit`／`BeforeAgent` 在提交消息后评分，**不是等助手回复结束才评分**。Codex 是异步执行，Claude Code 和 Gemini CLI 是同步执行，所以请留出评分和界面刷新的时间。Windows 上仍可用 `powershell -ExecutionPolicy Bypass -File skills/headroom/hooks/install_windows.ps1` 单独安装 Codex 的钩子。
 
 要把 `$headroom` 作为 Codex Skill 使用，可以通过本地插件市场安装这个仓库，或把 `skills/headroom` 复制到 Codex 的 skills 目录。仅安装插件 / Skill 不会自动启用或信任生命周期钩子。请保留钩子指向的源目录。
 
@@ -117,18 +131,20 @@ python3 skills/headroom/scripts/headroom.py status
 python3 skills/headroom/scripts/headroom_dashboard.py --lang zh
 ```
 
-要开启自动扣点，请在仓库根目录审阅并运行安装器。它会把 headroom 的两条钩子合并进 `${CODEX_HOME:-~/.codex}/hooks.json`，不改动你的其他钩子；文件有变更时先备份，可重复运行。钩子使用运行安装器的那个 Python（可用 `PYTHON=/path/to/python3` 指定），不依赖 PowerShell：
+`headroom.py` 默认读取 `~/.codex` 中的 Codex 历史；如果设置了自定义的 `CODEX_HOME`，请同时传入 `--codex-home "$CODEX_HOME"`。
+
+要开启自动扣点，请在仓库根目录审阅并运行安装器。它会把 headroom 的钩子合并进本机检测到的每个 agent 配置，不改动你的其他钩子；文件有变更时先备份，可重复运行。钩子使用运行安装器的那个 Python（可用 `PYTHON=/path/to/python3` 指定），不依赖 PowerShell：
 
 ```bash
 sh skills/headroom/hooks/install.sh --dry-run   # 预览
 sh skills/headroom/hooks/install.sh             # 加 --link-skill 可通过 ~/.agents/skills 提供 $headroom
 ```
 
-然后同样在 Codex `/hooks` 中审查并信任这两条定义。`SessionStart` 会启动网页面板（打开[面板](http://127.0.0.1:8766/?lang=zh)）。`sh skills/headroom/hooks/install.sh --uninstall` 只移除 headroom 的钩子，保留账本。
+然后像上面那样在各自 agent 中审查并信任这些定义。`SessionStart` 在 macOS 上启动菜单栏显示，在 Linux 上启动网页面板（打开[面板](http://127.0.0.1:8766/?lang=zh)）。`sh skills/headroom/hooks/install.sh --uninstall` 只移除 headroom 的钩子，保留账本。
 
 **macOS 菜单栏（可选）。** 在同一个 Python 中安装 `requirements-desktop.txt`，然后运行 `python3 skills/headroom/scripts/headroom_desktop.py --lang zh`。菜单栏会出现 H 图标，点击后选择 **展开用量** 查看静态卡片；也可以用 `--mode orb` 显示悬浮球。动画 WebView2 卡片仅支持 Windows，片段请在网页面板中播放。Python 需要带 Tk（Homebrew：`brew install python-tk`）；缺少 Tk 或托盘依赖时会自动改用网页面板。想让 `SessionStart` 打开菜单栏显示，请用 `--display desktop` 重新运行安装器。不会添加登录启动项。
 
-安装器**只装 Codex 的钩子**。其他 agent 的本地历史会参与额度基准和各 agent 明细；默认情况下，没有评分的对话也会按消息条数计入估算用量。它们的钩子可以手工添加：钩子会归一化各 agent 的载荷字段，并在设置了 `HEADROOM_AGENT` 时读取它，所以导出该变量的钩子定义可以直接工作。
+`opencode` 和 `WorkBuddy` 没有 JSON 钩子配置，因此它们保持只读：参与额度基准和各 agent 明细，但不扣点。`antigravity` 与 Gemini CLI 共用 `~/.gemini` 并在此计入，但 Antigravity 自己的钩子系统没有「提交提示词」事件（它的 `PreInvocation` 在每一次模型调用前触发），所以只有 Gemini CLI 会被装上钩子。其他工具可以手工添加钩子 —— 钩子会归一化各 agent 的载荷字段，并在设置了 `HEADROOM_AGENT` 时读取它，所以一条导出该变量的钩子定义就能直接工作。
 
 <a id="desktop-orb"></a>
 
